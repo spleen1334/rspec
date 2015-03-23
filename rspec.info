@@ -1,0 +1,261 @@
+RSPEC
+*****
+
+# 3 FAZE:
+Red, Green, Refactor
+
+# Kreira neophodne fajlove
+rspec --init
+
+# Dir structure
+spec/
+-- spec_helper.rb
+.rspec
+
+# Configuration .rspec
+-c / --color # color output
+--format progress # default ....F..F.
+--format doc # wordly output
+-o / --out # redirect output to file
+--fail-fast # stop testing on first fail
+
+# Rspec help, nije mnogo detaljan
+rspec --help
+
+# lib dir
+lib/location.rb # fajl za testiranje
+lib/location_spec.rb # spec
+
+# spec_helper.rb
+Ovde se mora dodati fajl koji se testira.
+Ima vise metoda za auto loadovanje odredjenih dir:
+$:.unshift 'lib'
+require 'lib/location'
+
+GOOD PRACTISE:
+--------------
+betterrspec.org
+
+TESTING METODE
+--------------
+SCOPE
+Scope je uvek u okviru describe/context.
+Sve sto je global mora da se nadje na samom pocetku da bi svi mogli da ga koriste.
+
+DESCRIBE/CONTEXT
+The purpose of “describe” is to wrap a set of tests against one functionality,
+while “context” is to wrap a set of tests against one functionality under the same state.
+
+IT BLOCK
+Opis za describe/context, it 'nesto ovde pise' do
+Moze i kao block za proveru: it { should be_true }
+
+EQ isto sto ==
+
+SUBJECT BLOCK
+Sve sto ovde ubacimo (var, obj, bilo kakav code) se koristi kao target za taj context/describe block
+
+ITS KOMANDA:
+Cela ova komanda se odnosi na SUBJECT, tako npr mozemo da pristupimo methodama, var, itd..
+
+SHOULD/SHOULD_NOT
+Zeljeni rezultat nekog blocka, komande itd..
+
+LET(:ime) DEFINICIJA
+Ovom komandom definisemo promenljive u testovima, mozemo ih pozivati sa ime
+
+BE_ DINAMICKE METODE/VAR
+be_true/ be_false = standardno
+Koristi se i za user metode npr iz subject: be_name(...)
+
+EXPECT {}.to
+Ocekuje da block/var ima odredjenu vrednost.
+
+RAISE_ERROR
+npr raise_error ArgumentError
+
+
+PRIMERI:
+
+Subject block:
+
+describe "Example" do
+  subject { { :key1 => "value1", :key2 => "value2" } }
+
+  # it "should have a size of 2" do
+  #   subject.size.should == 2
+  # end
+
+  Alternativa za it block:
+  its(:size) { should eq 2 }
+end
+
+
+
+
+RSPEC MATCHERS
+--------------
+Should, should_not, be, be_true/be_false,  eq, eql, <>=<
+
+# EQUALITY
+describe "Equal" do
+  let(:address) { "123 Main Street" }
+  subject { "123 Main Street" }
+
+  it { should eq '123 Main Street' }
+  it { should == "123 Main Street" }
+  it { should_not == "789 Any Circle" }
+  it { should_not be(address) } # object equality
+  it { should_not equal(address) } # object equality too
+  it { should eql(address) }
+  it { should == address }
+end
+
+# COMPARISON
+describe "Comparisons" do
+  subject { 42 }
+
+  it { should be > 41 }
+  it { should be >= 42 }
+  it { should be <= 42 }
+  it { should be < 43 }
+end
+
+# NUMBERS
+describe "Floating Comparison" do
+  subject { 3.141_592_653_5 }
+
+  it { should be_within(0.000_2).of(3.141_590) }
+end
+
+# REGEX
+describe "Regular Expression Comparison" do
+  subject { "this is a block of text" }
+
+  it { should match(/text$/) }
+  it { should =~ /\bblock\b/ }
+end
+
+# BOOLEAN
+describe "Boolean" do
+  subject { "non-nil is true" }
+
+  it { should be_true }
+  it { should_not be_false }
+end
+
+# PREDICATES
+# Dinamicki stvoreni matcheri za methode klasa koji ili pocinju sa has,
+# ili se zavrsavaju sa ?
+# nazivi matchera: have_methode_name ili be_method_name
+describe "Predicate" do
+  subject { { :a => 1, :b => 2 } }
+
+  it { should have_key(:a) } # has_key?(:a)
+  it { should_not be_empty } # empty?
+end
+
+# COLLECTIONS
+# Da li je neka vrednost sadrzana u kolekciji. (string su kolekcija char)
+describe "Collections" do
+  subject { ["text one", "text two"] }
+
+  it { should include "text two" }
+  its (:first) { should include "ext" } # its(:first) pristupa ruby methodu
+end
+
+# CLASSES
+describe "Class" do
+  subject { 42 }
+
+  it { should be_instance_of Fixnum }
+  it { should be_kind_of Integer } # Fixnum > Integer
+end
+
+# CONTRACT (misli se na metode?)
+describe "Contract Validation" do
+  subject { Resource.new }
+  it { should respond_to :near? }
+end
+
+# THROWS
+describe "Throws" do
+  subject { Proc.new { throw :some_symbol, "x" } }
+
+  it "should throw some_symbol" do
+    expect { subject.call }.to throw_symbol
+    expect { subject.call }.to throw_symbol(:some_symbol)
+    expect { subject.call }.to throw_symbol(:some_symbol, "x")
+  end
+end
+
+# RAISE ERRORS
+describe "Errors" do
+  subject { Proc.new { raise RuntimeError.new("x") } }
+
+  it "should raise an exception" do
+    expect { subject.call }.to raise_error
+    expect { subject.call }.to raise_error(RuntimeError)
+    expect { subject.call }.to raise_error(RuntimeError, 'x')
+    expect { subject.call }.to raise_error('x')
+  end
+end
+
+
+# ------------------------------------------------------------
+
+ *****
+*RAILS*
+ *****
+
+# 1. Kreira novi project bez Ruby Test::Unit
+rails new test_project --skip-test-unit
+
+# 2. GEMFILE
+gem 'rspec-rails' , :group => [:test, :development]
+
+# 3. Update gem dependency and install
+bundle install
+
+# 4. Generate Rspec files (integration testing)
+rails generate rspec:install
+
+>> Ovo kreira: spec/, .rspec, spec/spec_helper.rb
+
+
+# MODEL TESTING
+# 1. Generisati model
+rails g model location latitude:decimal longitude:decimal
+
+# 2. Izvrsiti kreiranje DB, kao i migracije
+bundle exec rake db:create:all && rake db:migrate && rake db:test:prepare # ili db:test:clone
+
+# 3. Da bi validacija izbacila neke errors mora da se pokrene objekat.valid?
+
+# 4. Block za let:
+let(:air_space) do
+  Location.new do |loc|
+    loc.latitude = 12.123
+    loc.longitude = 23.456
+  end
+  loc.save # snimi u db
+  loc # ovo je return
+end
+
+
+# ROUTE TESTING
+# 1. Generisi ctrl
+rails g controller locations --no-helper # switch znaci ne generisi helpere i spec
+
+# 2. Napravi neophodne foldere i fajlove:
+mkdir -p spec/routing && touch spec /routing/routes_spec.rb
+
+# 3. Novi korisne rspec methode:
+{ get: '/locations/new' }.should route_to(controller: 'locations', action: 'new')
+{ get: '/locations/42/edit' }.should_not be_routable # nemoze biti route
+
+
+# CTRL TESTING
+# 1. Moze se testirati npr da li radi redirect:
+subject { post :create, { location: { latitude: 2, longitude:3 } } }
+its(:status) { should eq 302 } # redirect # its se odnosi na attr/method objekta

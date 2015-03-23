@@ -1,0 +1,586 @@
+RSPEC
+
+
+CHAPTER 2:
+Configuracija Rails app
+-----------------------
+
+Neophodni gemovi:
+:development
+  rspec-rails
+  factory_girl_rails # zamena za fixtures
+
+:test
+  faker # generise imena, mailove adrese itd..
+  capybara # simulira browser (headless browser?)
+  database_cleaner # cisti test db
+  launchy # otvara browser da bi prikazao render
+  selenium-webdriver # js interakcija za capybara
+
+Instalacija rspec:
+bundle exec rails generate rspec:install
+
+Priprema db:
+bundle exec rake db:create:all
+bundle exec db:test:clone
+
+Napomena DB:
+posle svake migracije neophodno je izvrsiti db:test:clone da bi se updatovao schema file za test db
+
+Config fajlovi:
+
+config/database.yml
+  Izvrsiti podesavanja za test
+
+Podesavanje za test framework:
+config/application.rb
+
+config.generators do |g|
+  g.test_framework :rspec, # test framework
+    fixtures: true, # koristi fixtures, FactoryGirl
+    view_specs: false, # ne preporucuje da se pisu view testovi, vec integration test
+    helper_specs: false, # za vece aplikacije
+    routing_specs: false, # za vece aplicakije
+    controller_specs: true,
+    request_specs: false # ovo ce biti radjen custom chapter8
+  g.fixture_replacement :factory_girl, dir: "spec/factories"
+end
+
+CHAPTER 3
+Model specs
+-----------
+
+Model spec treba da sadrzi testove za:
+1. Model create, sa valid atributima, treba da bude validan
+2. Podaci koji su netacni ne smeju da budu validni
+3. Class & Instance methods moraju da se ponasaju ocekivano
+
+
+Naming konvencija:
+app/models/contact.rb >> spec/models/contact_spec.rb
+
+
+Simple spec:
+require 'spec_helper'
+describe Contact do
+  it "is valid with a firstname, lastname and email"
+  ...
+1. IT > opisuje ocekivanje od testa
+2. svaki IT se odnosi na jednu stvar2. svaki IT se odnosi na jednu stvar
+3. Svaki primer pocinje sa glagolom ( is invalid... )
+
+NAPOMENA: RSPEC SYNTAX
+should se ne koristi od 2.11, zamenjen je sa expect(x).to
+
+staro:
+it "is true when true" { true.should be_true }
+it "is true when true" { expect(true).to be_true }
+
+1. Create test
+expect(instance).to be_valid # be valid poziva .valid? Rails model-method, mislim da je dinamicki
+
+2. Validation test
+expect(Contact.new(firstname: nil)).to have(1).errors_on(:firstname)
+# .errors_on > mislim da pristupa .errors methodi iz model
+# have(x). > tice se arrays
+
+3. Uniquness test
+   Obratiti paznju na to da je prvo koriscen create da bi se uneo u bazu jedan record.
+   Nakon toga se provera vrsi uz pomoc NEW zbog toga sto create u slucaju da failuje validaciju vraca samo
+   false, a to nemoze da se proveri. Zato koristimo new jer kod njega ostaje objekat koji sadrzi .errors method.
+Contact.create(...)
+contact = Contact.new(...)
+
+expect(contact).to have(1).errors_on(:email)
+
+Uniqueness za validates:
+Model: Phone
+validates :phone, uniqueness: { scope: :contact_id }
+# Scope > je neka vrsta filtera za uniquness
+# Ovde to znaci da proveri sve phone recorde da budu unique ali SAMO za current contact
+# Number for home, office, mobile should all be unique WITHIN the scope of that user.
+
+# ODLICAN SAJT SA LISTOM MATCHERA:
+https://github.com/rspec/rspec-expectations
+
+Equality:
+eq > isto sto i ==
+
+Include:
+expect(...).to_not include smith
+
+Describe vs Context
+-------------------
+Imaju isto znacenje ali se najcesce koriste na sl nacin:
+Describe general funtionality / Context specific state/case of general func
+
+BEFORE HOOK
+-----------
+Code sadrzan u before hook blocku se pokrece pre :each slucaja u describe blocku.
+Neophodno je da promenljive u before blocku budu @INSTANCE var kako bi mogli da im pristupimo izvan blocka.
+
+AFTER HOOK >> Retko se koristi jer rspec auto cisti DB
+
+PRAVILO:
+READABILITY > DRY
+Ovo znaci da je bolje nekad i ponavljati kod radi vece citljivosti
+
+
+CHAPTER 4
+DATA FACTORIES
+--------------
+
+Fixtures vs Factories
+---------------------
+
+Fixtures predstavljaju najcesce YAML formated file koji se koristi za kreiranje sample data:
+contacts.yml
+spleen:
+  firstname: "Spleen"
+  lastname: "Ideal"
+  email: "test@mail.com"
+
+Nedostaci fixtures 2 velika:
+1. Lako se brake-uje (ovo nije objasnjeno detaljnije)
+2. No koristi ActiveRecord prilikom ucitavanja fixtures u db (npr nema validacije itd..)
+
+FACTORIES
+---------
+Najpopularniji gem za factories je FactoryGirl.
+Negativna strana factories je brzina testova.
+
+Lokacija: /spec/factories/
+Naziv: Plural od model name > Model User > Factory users.rb
+
+Izgled factory:
+FactoryGirl.define do
+  factory :contact do
+    firstname "John"
+    lastname "Doe"
+    sequence(:email) { |n| "johndoe#{n}@example.com" }
+  end
+end
+
+# SEQUENCE
+----------
+To je neka vrsta generatora/brojaca koristi se za uniqueness testove.
+On se automatski incrementira svaki put kad se generise objekat u testu.
+
+KORISCENJE:
+FactoryGirl.build(:contact) # npr, build kreira obj ali ne i record u db, ovde ga koristimo umesto new
+FactoryGirl.create(:contact) # create kreira obj i record
+
+Alternativna syntax: (ona omogucava da nemora da se kuca stalno FactoryGirl)
+spec/spec_helper.rb >> config.include FactoryGirl::Syntax::Methods
+
+build(:contact) === FactoryGirl.build(:contact)
+
+NESTED FACTORIES:
+-----------------
+FactoryGirl.define do
+  factory :phone do
+    association :contact # !!!
+    phone { '123-456-789}
+
+    factory :home_phone do # svi nested factories nasledjuju defaults ili overwrituju druge attribute
+      phone_type 'home'
+    end
+
+    factory :work_phone do
+      phone_type 'work'
+    end
+
+    factory :mobile_phone do
+      phone_type 'mobile'
+    end
+  end
+end
+
+1. association > slicno kao i u rails, ovo generise novi Contact obj kojem phone pripada ukoliko nije passed u build/create
+2. Nested > ovo je opet slicno sa ruby, sass, pod-factory nasledjuju osobine od glavnog factory
+
+
+FAKER
+-----
+Faker vrsi auto incrementaciju za svaki put kad se pozove factory.
+
+spec/factories/ime.rb
+
+require 'faker'
+
+firstname { Faker::Name.first_name }
+email { Faker::Internet.email } # nemora da se koristi FactoryGirl sequence
+phone { Faker::PhoneNumber.phone_number }
+
+FactoryGirl CALLBACKS
+---------------------
+Koristi se za testiranje advanced asocijacija (npr kad napravimo contact da li su kreirana i 3 phone numbers).
+
+Lista:
+after(:build), after(:create)
+before(:build), before(:create)
+
+Primer:
+after(:build) do |contact|
+  [:home_phone, :work_phone, :mobile_phone].each do |phone|
+    contact.phones << FactoryGirl.build(:phone,
+      phone_type: phone, contact: contact)
+  end
+end
+
+
+ABUSING FACTORIES:
+------------------
+Ukratko koriscenje factory moze dramaticno da uspori testove.
+Preporuke su ili koriscenje Ruby obj, ili rucno generisani podaci.
+Spominju se mocks i stubs.
+
+
+CONTROLLER TESTING
+------------------
+
+it "redirects to the home page after save" do
+  post :create, contact: FactoryGirl.attributes_for(:contact)
+  expect(response).to redirect_to root_url
+end
+
+.ATRRIBUTES_FOR >> Ovo ne kreira objekat vec hash (moglo je i rucno)
+contact: >> se odnosi na http post request
+
+DSL za interakciju sa CTRL methodama:
+-------------------------------------
+1. HTTP verbs:
+get, post, patch, delete
+
+primer: (http verb + hashed ctrl name + id)
+get :show, id: contact
+
+2. Provera vars koji su instancirani od strane ctrl:
+contact = create(:contact)
+get :show, id: contact
+expect(assigns(:contact)).to eq contact # :contact ovde je @contact iz kontrolera
+
+3. Rezultat rendera/http response je RESPONSE
+expect(response).to render_template :show
+
+4. Match_array korisno za http requestove:
+expect(assings(:contact)).to match_array([smith]) # proverava da li params[:contact] sadrzi u sebi [smith]
+
+
+BE_A_NEW Matcher
+----------------
+On poziva rails new_record? (ActiveRecord::Persistence) koji vraca true ukoliko obj nije saveovan,
+odnosno jos uvek se ne nalazi u DB. (Ovo nije sigurno ne radi u rails console)
+
+Ukratko proverava da li je @var instanca neke klase?
+
+expect(assigns(:contact)).to be_a_new(Contact)
+
+CHANGE, BY
+----------
+change(Klasa, :method) # nemora samo klasa da se proverava
+
+.to change(Contact, :count).by(1)
+
+Expect as Proc
+--------------
+Ovde se u expect passuje ceo block (koji se ponasa kao Proc).
+expect { post :create, contact: attributes_for(:invalid_contacts) }.to_not change(Contact, :count)
+
+PATCH TEST
+----------
+Kod testiranja sa invalid attributes, deo to_not eq("Nesto") je tacan zbog toga sto smo u
+patch :update delu namerno prosledili pogresne parametre za update recorda pa validacija sprecava
+updateovanje objekta.
+
+
+REFAKTORING KODA
+----------------
+Primer sa shared_examples():
+shared_examples("Nesto ide ovde") do it "nesto drugo" end
+
+it_behaves_like "Nesto ide ovde"
+
+
+HELPER MODULES
+--------------
+Cuva su spec/support/
+
+1. spec/support/naziv_macro_module.rb
+module NazivMacroModule
+  def neki_method; end
+end
+2. spec/spec_helper.rb, dodati include:
+config.include NazivMacroModule
+
+
+CUSTOM MATCHERS
+---------------
+1. Svi se cuvaju u: spec/support/matchers/ime_matchera.rb, automatski su includovani
+
+2. Izgled
+RSpec::Matchers.define :require_login do |expected|
+  match do |actual|
+    expect(actual).to redirect_to Rails.application.routes.url_helpers.login_path
+  end
+
+  failure_message_for_should do |actual|
+    "expected to require login to access the method"
+  end
+
+  failure_message_for_should_not do |actual|
+    "expected not to require login to access the method"
+  end
+
+  description do
+    "redirect to the login form"
+  end
+end
+
+3. Upotreba u spec:
+expect(response).to require_login
+
+match do block > ovo je ustvari mehanika, ostalo su sve opisi
+Rails.application... > se ovde explicitno poziva jer rspec ne ucitava Rails UrlHelper library
+actual > ovo je prosledjena vrednost (ovde je to response npr)
+
+
+INTEGRATION TESTING
+--------------------
+
+CAPIBARA
+--------
+
+1. Lokacija:
+spec/features/ime.rb
+
+2. Content:
+require 'spec_helper'
+
+feature 'my feature' do
+  background do
+    # setup details
+  end
+
+  scenario 'my first test' do
+    # test
+  end
+end
+
+3. Keywords:
+background {} > isto sto i before
+feature > describe
+scenario > context
+given > let
+
+3.1 Interactive:
+visit url # ili neki_path
+click_link 'Text'
+fill_in 'Email', with: admin.email
+click_button 'Log In'
+find('#css_id').fill_in 'Nesto', with: 'ovojeunos'
+
+expect(...)
+- current_path
+  page
+
+have_content 'text'
+
+DEBUGGIN FEATURE SPEC
+----
+
+LAUNCHY
+- Gem za prikazivanje rezultata spec u HTML
+- koristi se sa:
+  save_and_open_page
+- Ovo auto ucitava rezultat rendera za prethodni korak
+
+CAPIBARA HELPER
+Moguce je premestiti i capybara methode u helper funkciju npr:
+
+def sign_in(user)
+  visit root_path
+  click_link 'Log In'
+  ...
+end
+
+SELENIUM
+--------
+Driver za capybara koji omogucava interakciju sa JS
+
+Upotrebljava se dodavanjem js: true u scenario:
+scenario "nesto nesto", js: true do; end
+
+DATABASE CLEANER
+----------------
+Podesavanje spec_helper:
+config.use_transactional_fixtures = false
+
+config.before(:suite) do
+  DatabaseCleaner.strategy = :truncation
+end
+
+config.before(:each) do
+  DatabaseCleaner.start
+end
+
+config.after(:each) do
+  DatabaseCleaner.clean
+end
+
+2. MONKEY PATCHING
+spec/support/shared_db_connection.rb
+
+Ovo je radjeno zbog Selenium db handlinga.
+
+SELENIUM
+Previse je spor, tako da se proporucuju alternative capybara-webkit ili Poltergeist.
+(on svaki put otvara firefox)
+
+
+SPEEDUP
+-------
+
+let(:naziv_var) > definisanje var, cachiranje bez assignemnt to @var, lazy evaluation (znaci da se assignuje tek po pozivu)
+                > takodje obratiti paznju za delete action, tu je neophodno pozvati :var pre evaluacije
+
+subject {} > deklaracija test subjecta, koji se nakon toga moze koristiti na sve naredne primere (it se odnosi na subject)
+
+it{} / specify {} > sinonimi
+
+SHOULDA
+-------
+Gem sa dodatnim matcherima (npr validate_presence_of :firstname)
+
+
+MOCKS & STUBS
+-------------
+
+MOCK > some object that represents a REAL object for testing purposes (aka test doubles)
+     > FactoryGirl similar, but mocks do not access the DB
+
+STUB > overriders a method call on a given object and returns predetermined value for it. (aka fake method)
+
+PRIMER:
+MOCK >> build_stubbed(:nesto, nesto2: 'test')
+STUB >> allow(Contact).to receive(:order).with('lastname,firstname').and_return([contact])
+
+U primerima iz knjige mi definisemo sve metode koje emuliraju ActiveRecord (na pocetku u before blocku).
+Negativne strane mock/stubs su izolovan kod koji dovodi do neophodnosti dodatnog koda (kao za ActiveRecord).
+Preporuka je da se uglavnom koriste ruby @var ili FactoryGirl.
+U slucaju da se testovi drasticno uspore ili je neophodno testirati podatke koje je tesko rekreirati (najbolji primer je external API
+ili network/web service) onda bi trebalo razmisliti o upotrebi mocks/stubs.
+
+
+GUARD/SPORK
+-----------
+
+GUARD >> slicno kao watchr iz rubykoans. On prati app/ i spec/ i pokrece relevantne testove.
+
+1. Include in Gemfile: :development > gem 'guard-rspec'
+2. bundle exec guard init rspec >> Guardfile
+3. bundle exec guard (ovo pokrece guard)
+
+CUSTOM SETTINGS:
+guard 'rspec', notification: false, all_on_start: false, all_on_pass: false, cli: "--drb" do
+notification: false > bez notifikacija (putem terminala, popup itd..)
+all_on_start: false > ne pokreci sve testove prilikom prvog startovanja guard-a
+all_after_pass: false  > Run all specs after changed specs pass, default: false
+cli: "--drb" > aktivacija sporka # ovo moze i u .rspec file
+
+CLI GUARD:
+guard help
+Na github/guard ima dosta korisnih shell options
+
+Kada se guard pokrene on aktivira PRY consolu.
+Kad god nema sta da radi on prikazuje PRY console.
+Mogucu inputi:
+p, pause > pauziraj sa pracenjem guard
+c, change > trigger file change
+s, show > prikazuje opcije pluginove
+exit
+reload > ponovo ucitaj config file
+enter (kao taster na keyboard) > pokrece sve testove
+
+
+SPORK >> Ucitava celokupnu rails app odjednom i ostavlja je u mem, tako da se prilikom svakog testa nemora ponovo ucitavati rails
+          Samo ga dodati u Gemfile: gem 'spork-rails'
+      >> Mnogo bolje i detaljnije objasnjeno u spork github, manje vise sve iz Rspec.config se premesta u Spork.prefork
+         1. gem 'spork-rails' 2. spork rspec --bootstrap 3. spork (pokreni server) 4. bundle exec rspec --drb spec/
+
+
+RSPEC TAGS
+----------
+Otprilike obelezava neki test (it) i nakon toga moze da se izvrsava samo taj deo.
+it "nesto radi", focus: true do; end
+bundle exec rspec --tag focus
+
+Omogucava i podesavanje spec_helpera da se ne/pokrecu npr samo testovi sa odredjenim tagovima:
+Rspec.configure do |c|
+  c.filter_run focus: true
+  c.filter_run_excluding slow: true
+end
+
+PENDING > Ovo obelezava test kao nesto sto vise nije neophodno i nece ga pokretati
+pending "ovo nije potrebno vise"
+
+
+
+EMAIL TESTING
+-------------
+GEM EMAIL SPEC
+> Podesavanje:
+> gem 'email_spec'
+  spec_helper:
+> require 'email_spec'
+  RSpec.configure do |config|
+    config.include(EmailSpec::Helpers)
+    config.include(EmailSpec::Matchers)
+  end
+> Upotreba:
+
+extract(open_last_email).to be_delivered_from sender.email
+extract(open_last_email).to have_reply_to sender.email
+extract(open_last_email).to be_delivered_to recepient.email
+extract(open_last_email).to have_subject message.subject
+extract(open_last_email).to have_body_text message.message
+
+- Novi mail objekat:
+email = MessageMailer.create_friend_request('test@gmail.com')
+expect(email).to deliver_to('test@gmail.com')
+expect(email).to have_subject('Friend Request')
+
+Primer iz  gita:
+describe "Signup Email" do
+  include EmailSpec::Helpers
+  include EmailSpec::Matchers
+  # include ActionController::UrlWriter - old rails
+  include Rails.application.routes.url_helpers
+
+  before(:all) do
+    @email = UserMailer.create_signup("jojo@yahoo.com", "Jojo Binks")
+  end
+
+  it "should be set to be delivered to the email passed in" do
+    @email.should deliver_to("jojo@yahoo.com")
+  end
+
+  it "should contain the user's message in the mail body" do
+    @email.should have_body_text(/Jojo Binks/)
+  end
+
+  it "should contain a link to the confirmation link" do
+    @email.should have_body_text(/#{confirm_account_url}/)
+  end
+
+  it "should have the correct subject" do
+    @email.should have_subject(/Account confirmation/)
+  end
+
+end
+
+# JOS OBJASNJENO, FILE UPLOAD TEST, TIME TESTING, WEB SERVICE TEST...
+
+
+
+
